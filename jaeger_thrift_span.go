@@ -15,19 +15,12 @@
 package jaeger
 
 import (
-	"net"
-	"strings"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
 
 	j "github.com/uber/jaeger-client-go/thrift-gen/jaeger"
 	"github.com/uber/jaeger-client-go/utils"
-)
-
-const (
-	servicesIPsTagKey     = "tag.services.ips"
-	servicesIPsBaggageKey = "baggage.services.ips"
 )
 
 // BuildJaegerThrift builds jaeger span based on internal span.
@@ -37,6 +30,8 @@ func BuildJaegerThrift(span *Span) *j.Span {
 	defer span.Unlock()
 	startTime := utils.TimeToMicrosecondsSinceEpochInt64(span.startTime)
 	duration := span.duration.Nanoseconds() / int64(time.Microsecond)
+	// check if need baggage trace err
+	baggageSpanTagParentErr(span)
 	// add local ips to span baggage for distribution，then need put into jaeger span tags
 	baggageServiceIps(span)
 	// build jaeger span
@@ -49,7 +44,7 @@ func BuildJaegerThrift(span *Span) *j.Span {
 		Flags:         int32(span.context.samplingState.flags()),
 		StartTime:     startTime,
 		Duration:      duration,
-		Tags:          buildTags(span.tags, span.tracer.options.maxTagValueLength, span.BaggageItem(servicesIPsBaggageKey)),
+		Tags:          buildTags(span),
 		Logs:          buildLogs(span.logs),
 		References:    buildReferences(span.references),
 	}
@@ -61,13 +56,15 @@ func BuildJaegerThrift(span *Span) *j.Span {
 func BuildJaegerProcessThrift(span *Span) *j.Process {
 	span.Lock()
 	defer span.Unlock()
-	return buildJaegerProcessThrift(span.tracer, span.BaggageItem(servicesIPsBaggageKey))
+	return buildJaegerProcessThrift(span)
 }
 
-func buildJaegerProcessThrift(tracer *Tracer, ips string) *j.Process {
+func buildJaegerProcessThrift(span *Span) *j.Process {
+	tracer := span.tracer
+
 	process := &j.Process{
 		ServiceName: tracer.serviceName,
-		Tags:        buildTags(tracer.tags, tracer.options.maxTagValueLength, ips),
+		Tags:        buildTags(span),
 	}
 	if tracer.process.UUID != "" {
 		process.Tags = append(process.Tags, &j.Tag{Key: TracerUUIDTagKey, VStr: &tracer.process.UUID, VType: j.TagType_STRING})
@@ -75,7 +72,8 @@ func buildJaegerProcessThrift(tracer *Tracer, ips string) *j.Process {
 	return process
 }
 
-func buildTags(tags []Tag, maxTagValueLength int, ips string) []*j.Tag {
+func buildTags(span *Span) []*j.Tag {
+	tags, maxTagValueLength := span.tags, span.tracer.options.maxTagValueLength
 	jTags := make([]*j.Tag, 0, len(tags))
 	for _, tag := range tags {
 		jTag := buildTag(&tag, maxTagValueLength)
@@ -83,11 +81,32 @@ func buildTags(tags []Tag, maxTagValueLength int, ips string) []*j.Tag {
 	}
 
 	// add ips tag
-	ipsJTag := buildTag(&Tag{
-		key:   servicesIPsTagKey,
-		value: ips,
-	}, maxTagValueLength)
-	jTags = append(jTags, ipsJTag)
+	if ips := span.BaggageItem(servicesIPsBaggageKey); ips != "" {
+		ipsJTag := buildTag(&Tag{
+			key:   servicesIPsTagKey,
+			value: ips,
+		}, maxTagValueLength)
+		jTags = append(jTags, ipsJTag)
+	}
+
+	// add parentErr tag
+	traceErrValue := span.BaggageItem(traceErrorBaggageKey)
+	if traceErrValue == traceParentErrorBaggageValue {
+		traceErrTag := buildTag(&Tag{
+			key:   traceErrorTagKey,
+			value: traceParentErrorTagValue,
+		}, maxTagValueLength)
+		jTags = append(jTags, traceErrTag)
+	}
+
+	if traceErrValue == traceSelfErrorBaggageValue {
+		traceErrTag := buildTag(&Tag{
+			key:   traceErrorTagKey,
+			value: traceSelfErrorTagValue,
+		}, maxTagValueLength)
+		jTags = append(jTags, traceErrTag)
+	}
+
 	return jTags
 }
 
@@ -195,29 +214,4 @@ func spanRef(ctx SpanContext, refType j.SpanRefType) *j.SpanRef {
 		TraceIdHigh: int64(ctx.traceID.High),
 		SpanId:      int64(ctx.spanID),
 	}
-}
-
-func baggageServiceIps(span *Span) {
-	ips := span.BaggageItem(servicesIPsBaggageKey)
-	if localIP, err := getLocalAddress(); err == nil && localIP != "" {
-		ips = strings.Join([]string{ips, localIP}, ",")
-	}
-	span.SetBaggageItem(servicesIPsBaggageKey, ips)
-}
-
-func getLocalAddress() (string, error) {
-	adds, err := net.InterfaceAddrs()
-	if err != nil {
-		return "", err
-	}
-
-	for _, address := range adds {
-		if ipNet, ok := address.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
-			if ipNet.IP.To16() != nil {
-				return ipNet.IP.String(), nil
-			}
-		}
-	}
-
-	return "", nil
 }
