@@ -81,7 +81,7 @@ func buildTags(span *Span) []*j.Tag {
 	}
 
 	// add ips tag
-	if ips := span.BaggageItem(servicesIPsBaggageKey); ips != "" {
+	if ips := span.baggageItem(servicesIPsBaggageKey); ips != "" {
 		ipsJTag := buildTag(&Tag{
 			key:   servicesIPsTagKey,
 			value: ips,
@@ -90,7 +90,7 @@ func buildTags(span *Span) []*j.Tag {
 	}
 
 	// add parentErr tag
-	traceErrValue := span.BaggageItem(traceErrorBaggageKey)
+	traceErrValue := span.baggageItem(traceErrorBaggageKey)
 	if traceErrValue == traceParentErrorBaggageValue {
 		traceErrTag := buildTag(&Tag{
 			key:   traceErrorTagKey,

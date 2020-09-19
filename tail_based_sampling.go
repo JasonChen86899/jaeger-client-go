@@ -32,7 +32,7 @@ func getLocalAddress() (string, error) {
 
 	for _, address := range adds {
 		if ipNet, ok := address.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
-			if ipNet.IP.To16() != nil {
+			if ipNet.IP.To4() != nil {
 				return ipNet.IP.String(), nil
 			}
 		}
@@ -42,13 +42,13 @@ func getLocalAddress() (string, error) {
 }
 
 func baggageServiceIps(span *Span) {
-	traceErr := span.BaggageItem(traceErrorBaggageKey)
+	traceErr := span.baggageItem(traceErrorBaggageKey)
 	if traceErr == traceParentErrorBaggageValue {
-		span.SetBaggageItem(servicesIPsBaggageKey, "")
+		span.setBaggageItem(servicesIPsBaggageKey, "")
 		return
 	}
 
-	ips := span.BaggageItem(servicesIPsBaggageKey)
+	ips := span.baggageItem(servicesIPsBaggageKey)
 	if localIP, err := getLocalAddress(); err == nil && localIP != "" {
 		if ips == "" {
 			ips = localIP
@@ -56,15 +56,15 @@ func baggageServiceIps(span *Span) {
 			ips = strings.Join([]string{ips, localIP}, ",")
 		}
 
-		span.SetBaggageItem(servicesIPsBaggageKey, ips)
+		span.setBaggageItem(servicesIPsBaggageKey, ips)
 	}
 }
 
 func baggageSpanTagParentErr(span *Span) {
-	traceErr := span.BaggageItem(traceErrorBaggageKey)
+	traceErr := span.baggageItem(traceErrorBaggageKey)
 
 	if traceErr == traceSelfErrorBaggageValue {
-		span.SetBaggageItem(traceErrorBaggageKey, traceParentErrorBaggageValue)
+		span.setBaggageItem(traceErrorBaggageKey, traceParentErrorBaggageValue)
 		return
 	}
 
@@ -95,6 +95,6 @@ func baggageSpanTagParentErr(span *Span) {
 	}
 
 	if needBaggage {
-		span.SetBaggageItem(traceErrorBaggageKey, traceSelfErrorBaggageValue)
+		span.setBaggageItem(traceErrorBaggageKey, traceSelfErrorBaggageValue)
 	}
 }

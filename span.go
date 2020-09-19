@@ -492,3 +492,15 @@ func EnableFirehose(s *Span) {
 	defer s.Unlock()
 	s.context.samplingState.setFirehose()
 }
+
+func (s *Span) baggageItem(key string) string {
+	if s.context.baggage != nil {
+		return s.context.baggage[key]
+	}
+	return ""
+}
+
+func (s *Span) setBaggageItem(key, value string) opentracing.Span {
+	s.tracer.setBaggage(s, key, value)
+	return s
+}
