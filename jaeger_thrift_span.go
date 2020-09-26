@@ -30,10 +30,7 @@ func BuildJaegerThrift(span *Span) *j.Span {
 	defer span.Unlock()
 	startTime := utils.TimeToMicrosecondsSinceEpochInt64(span.startTime)
 	duration := span.duration.Nanoseconds() / int64(time.Microsecond)
-	// check if need baggage trace err
-	baggageSpanTagParentErr(span)
-	// add local ips to span baggage for distribution，then need put into jaeger span tags
-	baggageServiceIps(span)
+
 	// build jaeger span
 	jaegerSpan := &j.Span{
 		TraceIdLow:    int64(span.context.traceID.Low),
@@ -99,6 +96,7 @@ func buildTags(span *Span) []*j.Tag {
 		jTags = append(jTags, traceErrTag)
 	}
 
+	// add selfErr tag
 	if traceErrValue == traceSelfErrorBaggageValue {
 		traceErrTag := buildTag(&Tag{
 			key:   traceErrorTagKey,

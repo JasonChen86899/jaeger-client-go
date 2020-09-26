@@ -6,14 +6,10 @@ import (
 )
 
 const (
+	/********* private tag key and value ********/
+
 	servicesIPsTagKey     = "tag.services.ips"
 	servicesIPsBaggageKey = "baggage.services.ips"
-
-	tagKeyHttpStatusCode = "http.status_code"
-	tagValueHttpCodeBase = 100
-
-	tagKeyError   = "error"
-	tagValueError = 1
 
 	traceErrorTagKey         = "tag.tail_based_sampling.error"
 	traceParentErrorTagValue = 1
@@ -22,6 +18,14 @@ const (
 	traceErrorBaggageKey         = "baggage.tail_based_sampling.error"
 	traceParentErrorBaggageValue = "1"
 	traceSelfErrorBaggageValue   = "0"
+
+	/********* Open tag key and value ********/
+
+	tagKeyHttpStatusCode = "http.status_code"
+	tagValueHttpCodeBase = 100
+
+	tagKeyServiceError   = "error"
+	tagValueServiceError = true
 )
 
 func getLocalAddress() (string, error) {
@@ -41,14 +45,15 @@ func getLocalAddress() (string, error) {
 	return "", nil
 }
 
-func baggageServiceIps(span *Span) {
-	traceErr := span.baggageItem(traceErrorBaggageKey)
+// BaggageServiceIPs add local ips and downstream server ip to span baggage for distribution，then need put into jaeger span tags
+func BaggageServiceIPs(span *Span, downStreamIP string) {
+	traceErr := span.BaggageItem(traceErrorBaggageKey)
 	if traceErr == traceParentErrorBaggageValue {
-		span.setBaggageItem(servicesIPsBaggageKey, "")
+		span.SetBaggageItem(servicesIPsBaggageKey, "")
 		return
 	}
 
-	ips := span.baggageItem(servicesIPsBaggageKey)
+	ips := span.BaggageItem(servicesIPsBaggageKey)
 	if localIP, err := getLocalAddress(); err == nil && localIP != "" {
 		if ips == "" {
 			ips = localIP
@@ -56,22 +61,21 @@ func baggageServiceIps(span *Span) {
 			ips = strings.Join([]string{ips, localIP}, ",")
 		}
 
-		span.setBaggageItem(servicesIPsBaggageKey, ips)
+		ips = strings.Join([]string{ips, downStreamIP}, ",")
+		span.SetBaggageItem(servicesIPsBaggageKey, ips)
 	}
 }
 
-func baggageSpanTagParentErr(span *Span) {
-	traceErr := span.baggageItem(traceErrorBaggageKey)
+func SetHttpCodeTag(span *Span, httpCode int) {
+	span.SetTag(tagKeyHttpStatusCode, httpCode)
+}
 
-	if traceErr == traceSelfErrorBaggageValue {
-		span.setBaggageItem(traceErrorBaggageKey, traceParentErrorBaggageValue)
-		return
-	}
+func SetServiceErrorTag(span *Span) {
+	span.SetTag(tagKeyServiceError, tagValueServiceError)
+}
 
-	if traceErr == traceParentErrorBaggageValue {
-		return
-	}
-
+// BaggageSpanTagSelfErr after set http code tag or err tag, you need call this func
+func BaggageSpanTagSelfErr(span *Span) {
 	needBaggage := false
 	// check self span is special span
 	for _, tag := range span.tags {
@@ -85,9 +89,9 @@ func baggageSpanTagParentErr(span *Span) {
 				}
 			}
 
-		case tagKeyError:
-			if err, ok := value.(int); ok {
-				if err == tagValueError {
+		case tagKeyServiceError:
+			if err, ok := value.(bool); ok {
+				if err == tagValueServiceError {
 					needBaggage = true
 				}
 			}
@@ -96,5 +100,17 @@ func baggageSpanTagParentErr(span *Span) {
 
 	if needBaggage {
 		span.setBaggageItem(traceErrorBaggageKey, traceSelfErrorBaggageValue)
+	}
+}
+
+// BaggageSpanTagParentErr add parent err for all down stream spans of this trace.
+// Attention: this function must call before tracer.Inject()
+func BaggageSpanTagParentErr(span *Span) {
+	traceErr := span.BaggageItem(traceErrorBaggageKey)
+
+	if traceErr == traceParentErrorBaggageValue {
+		return
+	} else {
+		span.SetBaggageItem(traceErrorBaggageKey, traceParentErrorBaggageValue)
 	}
 }
