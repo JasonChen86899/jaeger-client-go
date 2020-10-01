@@ -47,7 +47,9 @@ func getThriftSpanByteLength(t *testing.T, span *Span) int {
 }
 
 func getThriftProcessByteLengthFromTracer(t *testing.T, tracer *Tracer) int {
-	process := buildJaegerProcessThrift(tracer)
+	process := buildJaegerProcessThrift(&Span{
+		tracer: tracer,
+	})
 	return getThriftProcessByteLength(t, process)
 }
 

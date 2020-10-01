@@ -61,7 +61,10 @@ func BaggageServiceIPs(span *Span, downStreamIP string) {
 			ips = strings.Join([]string{ips, localIP}, ",")
 		}
 
-		ips = strings.Join([]string{ips, downStreamIP}, ",")
+		// add down stream ip
+		if downStreamIP != "" {
+			ips = strings.Join([]string{ips, downStreamIP}, ",")
+		}
 		span.SetBaggageItem(servicesIPsBaggageKey, ips)
 	}
 }

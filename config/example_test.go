@@ -15,8 +15,11 @@
 package config_test
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"testing"
+	"time"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/uber/jaeger-lib/metrics"
@@ -125,4 +128,59 @@ func ExampleConfiguration_InitGlobalTracer_production() {
 	defer closer.Close()
 
 	// continue main()
+}
+
+func TestAllInOne(t *testing.T) {
+	cfg, err := jaegercfg.FromEnv()
+	if err != nil {
+		// parsing errors might happen here, such as when we get a string where we expect a number
+		log.Printf("Could not parse Jaeger env vars: %s", err.Error())
+		return
+	}
+
+	cfg.ServiceName = "this-will-be-the-service-name"
+
+	sender, err := jaeger.NewUDPTransport("127.0.0.1:6831", 1000)
+	if err != nil {
+		fmt.Println("udp error")
+		return
+	}
+
+	rOps := jaeger.ReporterOptions
+	reporter := jaeger.NewRemoteReporter(sender, rOps.BufferFlushInterval(time.Second))
+	// Initialize tracer with a logger and a metrics factory
+	tracer, _, err := cfg.NewTracer(
+		jaegercfg.Reporter(reporter),
+	)
+
+	if err !=  nil {
+		log.Println(err)
+		return
+	}
+
+	opentracing.SetGlobalTracer(tracer)
+
+	for {
+		for i := 0; i < 10000; i++ {
+			spanContext := jaeger.NewSpanContext(jaeger.TraceID{
+				High: 9,
+				Low:  9,
+			}, jaeger.SpanID(9), jaeger.SpanID(9), true, map[string]string{
+				"name": "chenhao",
+			})
+			sp := opentracing.StartSpan("test_chenhao_1", opentracing.ChildOf(spanContext))
+			sp.Finish()
+
+			childSp := opentracing.StartSpan("test_chenhao_2", opentracing.ChildOf(sp.Context()))
+			//childSp.SetTag("error", true)
+			jaeger.SetServiceErrorTag(childSp.(*jaeger.Span))
+			jaeger.BaggageServiceIPs(childSp.(*jaeger.Span), "127.0.0.1")
+			jaeger.BaggageSpanTagSelfErr(childSp.(*jaeger.Span))
+			childSp.Finish()
+
+			time.Sleep(time.Second)
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
 }

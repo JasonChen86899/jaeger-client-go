@@ -285,7 +285,10 @@ func TestBuildTags(t *testing.T) {
 	}
 	for i, test := range tests {
 		testName := fmt.Sprintf("test-%02d", i)
-		actual := buildTags([]Tag{test.tag}, DefaultMaxTagValueLength)
+		actual := buildTags(&Span{
+			tags: nil,
+			tracer: jaegerTracer,
+		})
 		assert.Len(t, actual, 1)
 		compareTags(t, test.expected, actual[0], testName)
 	}
